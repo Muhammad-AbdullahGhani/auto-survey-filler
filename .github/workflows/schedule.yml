@@ -1,0 +1,47 @@
+name: Random Auto Filler
+
+on:
+  schedule:
+    # Runs 4 times a day: 09:00, 13:00, 17:00, 21:00 UTC
+    # This creates a window where the random delay will happen
+    - cron: '0 9,13,17,21 * * *'
+  workflow_dispatch: # Allows you to click "Run Now" manually
+
+permissions:
+  contents: write
+
+jobs:
+  fill-survey:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Random Delay (Human Behavior)
+        run: |
+          # Wait between 1 minute and 45 minutes
+          DELAY=$(( ( RANDOM % 2700 ) + 60 ))
+          echo "Sleeping for $DELAY seconds to simulate human timing..."
+          sleep $DELAY
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Automation Script
+        run: python cloud_fill.py
+
+      - name: Commit Progress
+        run: |
+          git config --global user.name "Auto-Bot"
+          git config --global user.email "bot@github.com"
+          git add FINAL_DATASET.csv
+          # Only commit if there are changes (i.e., rows marked 'Done')
+          git commit -m "Progress Update: Form filled" || echo "No forms filled this run"
+          git push
