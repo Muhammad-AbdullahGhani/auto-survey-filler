@@ -2,4 +2,5 @@ pandas
 selenium
 webdriver-manager
 faker
+
 openpyxl
