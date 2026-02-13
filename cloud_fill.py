@@ -164,7 +164,7 @@ def run_automation():
     print("Loading dataset...")
     try:
         df = pd.read_csv(DATA_FILE)
-        # *** FIX: Use 'Submission_Status' instead of 'Status' to avoid overwriting employment data
+        # Use 'Submission_Status' to avoid overwriting employment data
         if 'Submission_Status' not in df.columns: df['Submission_Status'] = ""
     except:
         print("Dataset not found!")
@@ -208,7 +208,9 @@ def run_automation():
             fill_text(driver, COLUMN_MAP['Job_Domain'], row['Job_Domain'])
             fill_text(driver, COLUMN_MAP['Job_Role'], row['Job_Role'])
             click_option(driver, COLUMN_MAP['Salary'], row['Salary'])
-            rate_scale(driver, COLUMN_MAP['Career_Satisfaction'], row['Career_Satisfaction'])
+            
+            # *** FIX: Matches the key in COLUMN_MAP ***
+            rate_scale(driver, COLUMN_MAP['Satisfaction'], row['Satisfaction'])
             
             # Use 'Status' from CSV for 'employment status' question
             click_option(driver, COLUMN_MAP['Status'], row['Status'])
