@@ -3,7 +3,6 @@ name: Random Auto Filler
 on:
   schedule:
     # Runs 4 times a day: 09:00, 13:00, 17:00, 21:00 UTC
-    # This creates a window where the random delay will happen
     - cron: '0 9,13,17,21 * * *'
   workflow_dispatch: # Allows you to click "Run Now" manually
 
@@ -41,6 +40,11 @@ jobs:
         run: |
           git config --global user.name "Auto-Bot"
           git config --global user.email "bot@github.com"
+          
+          # --- THE CRITICAL FIX ---
+          # Pull latest changes before saving to prevent conflicts
+          git pull origin main --rebase
+          
           git add FINAL_DATASET.csv
           # Only commit if there are changes (i.e., rows marked 'Done')
           git commit -m "Progress Update: Form filled" || echo "No forms filled this run"
