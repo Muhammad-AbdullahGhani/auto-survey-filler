@@ -177,7 +177,7 @@ def run_automation():
         return
 
     # Fill 3 forms per run
-    batch = remaining.head(3)
+    batch = remaining.head(1)
     print(f"Starting batch of {len(batch)} forms...")
 
     chrome_options = Options()
@@ -300,3 +300,4 @@ def run_automation():
 
 if __name__ == "__main__":
     run_automation()
+
