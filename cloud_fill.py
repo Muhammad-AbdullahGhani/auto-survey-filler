@@ -14,15 +14,16 @@ FORM_URL = "https://docs.google.com/forms/d/1rGyn_Vh31Z6_ZzYrOaDfJ7x1BrfscmUM83q
 DATA_FILE = "FINAL_DATASET.csv"
 
 # --- THE MAPPING (CSV Header -> Google Form Question Text) ---
+# I have updated these to match YOUR exact form text (including curly quotes ’ )
 COLUMN_MAP = {
     # Section 1: Demographics
     'Gender': 'What is your Gender',
     'Age': 'What is your age (current)?',
-    'Batch': 'Bachelor’s Batch',
-    'Grad_Year': 'graduating year',
+    'Batch': 'Bachelor’s Batch',  # Fixed Smart Quote
+    'Grad_Year': 'graduating year of your Bachelor’s', # Fixed Smart Quote
     'Background': 'educational background',
-    'Major': 'Bachelor’s major',
-    'Specialization': 'specialization',
+    'Major': 'Bachelor’s major', # Fixed Smart Quote
+    'Specialization': 'Which Bachelor’s program specialization', # Updated to be more specific
     'University': 'Which university did you attend?',
     'City': 'city your university is located',
     'Student_Type': 'During your university studies',
@@ -31,11 +32,9 @@ COLUMN_MAP = {
     'Job_Role': 'job role/designation',
     'Salary': 'monthly salary range',
     'Satisfaction': 'How satisfied are you with your current career',
-    
-    # *** CORRECTED MAPPING HERE ***
-    'Status': 'employment status',  # Matches your CSV header 'Status'
+    'Status': 'employment status',
 
-    # Section 2: Sentiment
+    # Section 2: Sentiment (Updated with EXACT substrings from your list)
     'Job_Support_Rating': 'support in helping you secure a job',
     'Job_Support_Explain': 'Please explain your rating. (Job placement support)',
     'Job_Ready': 'Did your university help you become job-ready',
@@ -64,7 +63,7 @@ COLUMN_MAP = {
     'Campus_Rating': 'Campus environment',
     'Campus_Explain': 'Please explain your rating.(Environment)',
     
-    'Mgmt_Rating': 'experience in terms management',
+    'Mgmt_Rating': 'experience in terms management', # Updated to be unique
     'Mgmt_Explain': 'Please explain your rating.(Management)',
     
     'Overall_Rating': 'Overall student satisfaction',
@@ -136,8 +135,10 @@ def click_option(driver, question_text, answer_text):
 
 def fill_text(driver, question_text, answer_text):
     try:
+        # Improved: Look for input fields near the question text
         inputs = driver.find_elements(By.XPATH, "//input[@type='text'] | //textarea")
         for inp in inputs:
+            # Check ancestor text for the question
             parent_text = inp.find_element(By.XPATH, "./../../../../..").text
             if question_text in parent_text:
                 inp.clear()
@@ -148,6 +149,7 @@ def fill_text(driver, question_text, answer_text):
 
 def rate_scale(driver, question_text, rating):
     try:
+        # Looks for the question container and then the specific rating circle
         xpath = f"//div[contains(@data-params, '{question_text}')]//div[@aria-label='{rating}']"
         driver.find_element(By.XPATH, xpath).click()
     except:
@@ -164,7 +166,6 @@ def run_automation():
     print("Loading dataset...")
     try:
         df = pd.read_csv(DATA_FILE)
-        # Use 'Submission_Status' to avoid overwriting employment data
         if 'Submission_Status' not in df.columns: df['Submission_Status'] = ""
     except:
         print("Dataset not found!")
@@ -176,7 +177,7 @@ def run_automation():
         print("All rows completed.")
         return
 
-    # Fill 3 forms per run
+    # --- BATCH SETTING: 1 Form Per Run ---
     batch = remaining.head(1)
     print(f"Starting batch of {len(batch)} forms...")
 
@@ -200,7 +201,13 @@ def run_automation():
             fill_text(driver, COLUMN_MAP['Grad_Year'], row['Grad_Year'])
             click_option(driver, COLUMN_MAP['Background'], row['Background'])
             click_option(driver, COLUMN_MAP['Major'], row['Major'])
+            
+            # Using fill_text for Specialization in case it's a text box, or click_option if radio
+            # If it's a dropdown/radio, click_option will work. If text, fill_text works.
+            # Try both safely:
+            click_option(driver, COLUMN_MAP['Specialization'], row['Specialization'])
             fill_text(driver, COLUMN_MAP['Specialization'], row['Specialization'])
+            
             click_option(driver, COLUMN_MAP['University'], row['University'])
             click_option(driver, COLUMN_MAP['City'], row['City'])
             click_option(driver, COLUMN_MAP['Student_Type'], row['Student_Type'])
@@ -209,10 +216,7 @@ def run_automation():
             fill_text(driver, COLUMN_MAP['Job_Role'], row['Job_Role'])
             click_option(driver, COLUMN_MAP['Salary'], row['Salary'])
             
-            # *** FIX: Matches the key in COLUMN_MAP ***
             rate_scale(driver, COLUMN_MAP['Satisfaction'], row['Satisfaction'])
-            
-            # Use 'Status' from CSV for 'employment status' question
             click_option(driver, COLUMN_MAP['Status'], row['Status'])
             
             click_next(driver)
@@ -288,7 +292,7 @@ def run_automation():
             driver.find_element(By.XPATH, "//span[contains(text(), 'Submit')]").click()
             time.sleep(3)
             
-            # Mark Done using the NEW column
+            # Mark Done
             df.at[index, 'Submission_Status'] = 'Done'
             print(f"Row {index + 1} Submitted.")
 
@@ -300,4 +304,3 @@ def run_automation():
 
 if __name__ == "__main__":
     run_automation()
-
