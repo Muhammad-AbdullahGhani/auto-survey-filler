@@ -41,11 +41,12 @@ jobs:
           git config --global user.name "Auto-Bot"
           git config --global user.email "bot@github.com"
           
-          # --- THE CRITICAL FIX ---
-          # Pull latest changes before saving to prevent conflicts
+          # 1. Save the local changes FIRST
+          git add FINAL_DATASET.csv
+          git commit -m "Progress Update: Form filled" || echo "No changes to commit"
+          
+          # 2. NOW pull the latest updates (rebase puts your save on top)
           git pull origin main --rebase
           
-          git add FINAL_DATASET.csv
-          # Only commit if there are changes (i.e., rows marked 'Done')
-          git commit -m "Progress Update: Form filled" || echo "No forms filled this run"
+          # 3. Push the final result
           git push
