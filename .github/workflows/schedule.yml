@@ -3,7 +3,8 @@ name: Random Auto Filler
 on:
   schedule:
     # Runs 4 times a day: 09:00, 13:00, 17:00, 21:00 UTC
-    - cron: '0 9,13,17,21 * * *'
+# Runs at 05:00 UTC (10 AM PKT), 10:00 UTC (3 PM PKT), and 15:00 UTC (8 PM PKT)
+  - cron: '0 5,10,15 * * *'
   workflow_dispatch: # Allows you to click "Run Now" manually
 
 permissions:
