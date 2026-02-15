@@ -1,6 +1,6 @@
 import pandas as pd
 import time
-import random
+import math
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -13,7 +13,7 @@ from selenium.webdriver.support import expected_conditions as EC
 FORM_URL = "https://docs.google.com/forms/d/1rGyn_Vh31Z6_ZzYrOaDfJ7x1BrfscmUM83qqlfSs178/viewform"
 DATA_FILE = "FINAL_DATASET.csv"
 
-# --- THE MAPPING ---
+# --- THE MAPPING (Exact text match) ---
 COLUMN_MAP = {
     # Section 1: Demographics
     'Gender': 'What is your Gender',
@@ -22,7 +22,7 @@ COLUMN_MAP = {
     'Grad_Year': 'graduating year',
     'Background': 'educational background',
     'Major': 'Bachelor’s major',
-    'Specialization': 'specialization',
+    'Specialization': 'Which Bachelor’s program specialization',
     'University': 'Which university did you attend?',
     'City': 'city your university is located',
     'Student_Type': 'During your university studies',
@@ -53,7 +53,7 @@ COLUMN_MAP = {
     'Events_Explain': 'explain your rating.(Events)',
     'Campus_Rating': 'Campus environment',
     'Campus_Explain': 'explain your rating.(Environment)',
-    'Mgmt_Rating': 'experience in terms management',
+    'Mgmt_Rating': 'terms management',
     'Mgmt_Explain': 'explain your rating.(Management)',
     'Overall_Rating': 'Overall student satisfaction',
     'Overall_Explain': 'Overall student satisfaction',
@@ -104,11 +104,12 @@ COLUMN_MAP = {
     'Platform_Wish': 'wish you had a platform'
 }
 
-# --- NEW ROBUST HELPER FUNCTIONS ---
+# --- ROBUST HELPER FUNCTIONS ---
+
 def get_question_container(driver, question_text):
     """Finds the specific 'box' (div) that contains the question text."""
     try:
-        # 1. Find all question containers (role='listitem')
+        # role='listitem' is the standard Google Forms container for a question
         containers = driver.find_elements(By.XPATH, "//div[@role='listitem']")
         for container in containers:
             if question_text in container.text:
@@ -117,44 +118,57 @@ def get_question_container(driver, question_text):
         pass
     return None
 
-def fill_smart(driver, question_text, answer_text):
+def clean_answer(answer):
+    """Converts 5.0 to '5' and ensures text is string."""
+    try:
+        if pd.isna(answer): return ""
+        # If it's a number like 5.0, convert to 5
+        if isinstance(answer, (int, float)):
+            if answer == int(answer):
+                return str(int(answer))
+        return str(answer)
+    except:
+        return str(answer)
+
+def fill_smart(driver, question_text, raw_answer):
     """Smartly detects if the question needs typing or clicking."""
+    answer_text = clean_answer(raw_answer)
+    if not answer_text: return
+
     try:
         container = get_question_container(driver, question_text)
         if not container:
-            # Silent skip if question isn't on this page
-            return
+            return # Skip if not found on this page
 
-        # 1. Try Typing (Input/Textarea)
+        # 1. Try Rating Scale (Prioritize this for ratings!)
         try:
-            input_field = container.find_element(By.XPATH, ".//input[@type='text'] | .//textarea")
-            input_field.clear()
-            input_field.send_keys(str(answer_text))
-            print(f"  [Type] Filled '{answer_text}' for '{question_text}'")
-            return
-        except:
-            pass # Not a text field
-
-        # 2. Try Clicking (Radio/Checkbox/Dropdown)
-        try:
-            # Look for the specific answer text inside this container
-            option = container.find_element(By.XPATH, f".//span[contains(text(), '{answer_text}')]")
-            option.click()
-            print(f"  [Click] Selected '{answer_text}' for '{question_text}'")
-            return
-        except:
-            pass # Not a simple option
-
-        # 3. Try Rating Scale (Linear Scale)
-        try:
-            # Look for aria-label="5" or just the number inside the container
-            rating_btn = container.find_element(By.XPATH, f".//div[@aria-label='{answer_text}']")
+            # Looks for the specific radio div with the matching data-value
+            rating_btn = container.find_element(By.XPATH, f".//div[@role='radio' and @data-value='{answer_text}']")
             rating_btn.click()
             print(f"  [Rate] Rated '{answer_text}' for '{question_text}'")
             return
         except:
             pass
-            
+        
+        # 2. Try Clicking (Radio/Checkbox/Dropdown)
+        try:
+            option = container.find_element(By.XPATH, f".//span[contains(text(), '{answer_text}')]")
+            option.click()
+            print(f"  [Click] Selected '{answer_text}' for '{question_text}'")
+            return
+        except:
+            pass
+
+        # 3. Try Typing (Input/Textarea)
+        try:
+            input_field = container.find_element(By.XPATH, ".//input[@type='text'] | .//textarea")
+            input_field.clear()
+            input_field.send_keys(answer_text)
+            print(f"  [Type] Filled '{answer_text}' for '{question_text}'")
+            return
+        except:
+            pass 
+
         print(f"  [FAIL] Found question '{question_text}' but couldn't fill '{answer_text}'")
 
     except Exception as e:
@@ -181,7 +195,7 @@ def run_automation():
         print("All rows completed.")
         return
 
-    # Use head(1) to be safe and verify first
+    # Batch size of 1 for safety
     batch = remaining.head(1)
     print(f"Starting batch of {len(batch)} forms...")
 
@@ -198,43 +212,35 @@ def run_automation():
             driver.get(FORM_URL)
             time.sleep(3)
 
-            # --- DYNAMIC FILLING LOOP ---
-            # Instead of section-by-section hardcoding, we loop through the map.
-            # This is safer because if a question is on Page 2 but we check Page 1, it just skips gracefully.
+            # Loop through ALL keys on EVERY page
+            # This handles dynamic page logic perfectly
             
-            # Page 1 Check
+            # Page 1
             for key, q_text in COLUMN_MAP.items():
-                if key in row and pd.notna(row[key]):
-                    fill_smart(driver, q_text, row[key])
-            
+                if key in row: fill_smart(driver, q_text, row[key])
             click_next(driver)
             time.sleep(2)
             
-            # Page 2 Check (Re-run filler for questions on page 2)
+            # Page 2
             for key, q_text in COLUMN_MAP.items():
-                if key in row and pd.notna(row[key]):
-                    fill_smart(driver, q_text, row[key])
-            
+                if key in row: fill_smart(driver, q_text, row[key])
             click_next(driver)
             time.sleep(2)
 
-            # Page 3 Check (Personality)
+            # Page 3
             for key, q_text in COLUMN_MAP.items():
-                if key in row and pd.notna(row[key]):
-                    fill_smart(driver, q_text, row[key])
-            
+                if key in row: fill_smart(driver, q_text, row[key])
             click_next(driver)
             time.sleep(2)
 
-            # Page 4 Check (Feedback)
+            # Page 4
             for key, q_text in COLUMN_MAP.items():
-                if key in row and pd.notna(row[key]):
-                    fill_smart(driver, q_text, row[key])
+                if key in row: fill_smart(driver, q_text, row[key])
 
             # SUBMIT
-            submit_btn = driver.find_elements(By.XPATH, "//span[contains(text(), 'Submit')]")
-            if submit_btn:
-                submit_btn[0].click()
+            submit_btns = driver.find_elements(By.XPATH, "//span[contains(text(), 'Submit')]")
+            if submit_btns:
+                submit_btns[0].click()
                 time.sleep(3)
                 df.at[index, 'Submission_Status'] = 'Done'
                 print(f"✅ Row {index + 1} Submitted Successfully.")
