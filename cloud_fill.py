@@ -13,17 +13,16 @@ from selenium.webdriver.support import expected_conditions as EC
 FORM_URL = "https://docs.google.com/forms/d/1rGyn_Vh31Z6_ZzYrOaDfJ7x1BrfscmUM83qqlfSs178/viewform"
 DATA_FILE = "FINAL_DATASET.csv"
 
-# --- THE MAPPING (CSV Header -> Google Form Question Text) ---
-# I have updated these to match YOUR exact form text (including curly quotes ’ )
+# --- THE MAPPING ---
 COLUMN_MAP = {
     # Section 1: Demographics
     'Gender': 'What is your Gender',
-    'Age': 'What is your age (current)?',
-    'Batch': 'Bachelor’s Batch',  # Fixed Smart Quote
-    'Grad_Year': 'graduating year of your Bachelor’s', # Fixed Smart Quote
+    'Age': 'What is your age',
+    'Batch': 'Bachelor’s Batch',
+    'Grad_Year': 'graduating year',
     'Background': 'educational background',
-    'Major': 'Bachelor’s major', # Fixed Smart Quote
-    'Specialization': 'Which Bachelor’s program specialization', # Updated to be more specific
+    'Major': 'Bachelor’s major',
+    'Specialization': 'specialization',
     'University': 'Which university did you attend?',
     'City': 'city your university is located',
     'Student_Type': 'During your university studies',
@@ -34,38 +33,28 @@ COLUMN_MAP = {
     'Satisfaction': 'How satisfied are you with your current career',
     'Status': 'employment status',
 
-    # Section 2: Sentiment (Updated with EXACT substrings from your list)
+    # Section 2: Sentiment
     'Job_Support_Rating': 'support in helping you secure a job',
-    'Job_Support_Explain': 'Please explain your rating. (Job placement support)',
+    'Job_Support_Explain': 'Job placement support',
     'Job_Ready': 'Did your university help you become job-ready',
-    
     'Faculty_Rating': 'Faculty & teaching quality',
-    'Faculty_Explain': 'Please explain your rating.(Faculty)',
-    
+    'Faculty_Explain': 'explain your rating.(Faculty)',
     'Resources_Rating': 'learning resources',
-    'Resources_Explain': 'Please explain your rating.(learning resources)',
-    
+    'Resources_Explain': 'explain your rating.(learning resources)',
     'Labs_Rating': 'laboratory/practical facilities',
-    'Labs_Explain': 'Please explain your rating.(labs)',
-    
+    'Labs_Explain': 'explain your rating.(labs)',
     'Sports_Rating': 'Sports facilities',
-    'Sports_Explain': 'Please explain your rating.(Sports)',
-    
+    'Sports_Explain': 'explain your rating.(Sports)',
     'Cafe_Rating': 'Cafeteria / Food services',
-    'Cafe_Explain': 'Please explain your rating.(Cafeteria)',
-    
+    'Cafe_Explain': 'explain your rating.(Cafeteria)',
     'Hostel_Rating': 'Hostel facilities',
-    'Hostel_Explain': 'Please explain your rating.(Hostels)',
-    
+    'Hostel_Explain': 'explain your rating.(Hostels)',
     'Events_Rating': 'Events & co-curricular activities',
-    'Events_Explain': 'Please explain your rating.(Events)',
-    
+    'Events_Explain': 'explain your rating.(Events)',
     'Campus_Rating': 'Campus environment',
-    'Campus_Explain': 'Please explain your rating.(Environment)',
-    
-    'Mgmt_Rating': 'experience in terms management', # Updated to be unique
-    'Mgmt_Explain': 'Please explain your rating.(Management)',
-    
+    'Campus_Explain': 'explain your rating.(Environment)',
+    'Mgmt_Rating': 'experience in terms management',
+    'Mgmt_Explain': 'explain your rating.(Management)',
     'Overall_Rating': 'Overall student satisfaction',
     'Overall_Explain': 'Overall student satisfaction',
 
@@ -115,45 +104,61 @@ COLUMN_MAP = {
     'Platform_Wish': 'wish you had a platform'
 }
 
-# --- HELPER FUNCTIONS ---
-def safe_click(driver, xpath):
+# --- NEW ROBUST HELPER FUNCTIONS ---
+def get_question_container(driver, question_text):
+    """Finds the specific 'box' (div) that contains the question text."""
     try:
-        el = WebDriverWait(driver, 2).until(EC.element_to_be_clickable((By.XPATH, xpath)))
-        el.click()
-        return True
-    except:
-        return False
-
-def click_option(driver, question_text, answer_text):
-    try:
-        # Tries to find unique text match first
-        xpath = f"//div[contains(@data-params, '{question_text}')]//span[contains(text(), '{answer_text}')]"
-        if not safe_click(driver, xpath):
-             driver.find_element(By.XPATH, f"//span[contains(text(), '{answer_text}')]").click()
+        # 1. Find all question containers (role='listitem')
+        containers = driver.find_elements(By.XPATH, "//div[@role='listitem']")
+        for container in containers:
+            if question_text in container.text:
+                return container
     except:
         pass
+    return None
 
-def fill_text(driver, question_text, answer_text):
+def fill_smart(driver, question_text, answer_text):
+    """Smartly detects if the question needs typing or clicking."""
     try:
-        # Improved: Look for input fields near the question text
-        inputs = driver.find_elements(By.XPATH, "//input[@type='text'] | //textarea")
-        for inp in inputs:
-            # Check ancestor text for the question
-            parent_text = inp.find_element(By.XPATH, "./../../../../..").text
-            if question_text in parent_text:
-                inp.clear()
-                inp.send_keys(str(answer_text))
-                break
-    except:
-        pass
+        container = get_question_container(driver, question_text)
+        if not container:
+            # Silent skip if question isn't on this page
+            return
 
-def rate_scale(driver, question_text, rating):
-    try:
-        # Looks for the question container and then the specific rating circle
-        xpath = f"//div[contains(@data-params, '{question_text}')]//div[@aria-label='{rating}']"
-        driver.find_element(By.XPATH, xpath).click()
-    except:
-        pass
+        # 1. Try Typing (Input/Textarea)
+        try:
+            input_field = container.find_element(By.XPATH, ".//input[@type='text'] | .//textarea")
+            input_field.clear()
+            input_field.send_keys(str(answer_text))
+            print(f"  [Type] Filled '{answer_text}' for '{question_text}'")
+            return
+        except:
+            pass # Not a text field
+
+        # 2. Try Clicking (Radio/Checkbox/Dropdown)
+        try:
+            # Look for the specific answer text inside this container
+            option = container.find_element(By.XPATH, f".//span[contains(text(), '{answer_text}')]")
+            option.click()
+            print(f"  [Click] Selected '{answer_text}' for '{question_text}'")
+            return
+        except:
+            pass # Not a simple option
+
+        # 3. Try Rating Scale (Linear Scale)
+        try:
+            # Look for aria-label="5" or just the number inside the container
+            rating_btn = container.find_element(By.XPATH, f".//div[@aria-label='{answer_text}']")
+            rating_btn.click()
+            print(f"  [Rate] Rated '{answer_text}' for '{question_text}'")
+            return
+        except:
+            pass
+            
+        print(f"  [FAIL] Found question '{question_text}' but couldn't fill '{answer_text}'")
+
+    except Exception as e:
+        print(f"  [ERR] Error on '{question_text}': {e}")
 
 def click_next(driver):
     try:
@@ -171,13 +176,12 @@ def run_automation():
         print("Dataset not found!")
         return
 
-    # Filter for rows not yet done
     remaining = df[df['Submission_Status'] != 'Done']
     if len(remaining) == 0:
         print("All rows completed.")
         return
 
-    # --- BATCH SETTING: 1 Form Per Run ---
+    # Use head(1) to be safe and verify first
     batch = remaining.head(1)
     print(f"Starting batch of {len(batch)} forms...")
 
@@ -189,115 +193,56 @@ def run_automation():
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
     for index, row in batch.iterrows():
-        print(f"Processing Row {index + 1}...")
+        print(f"\n=== Processing Row {index + 1} ===")
         try:
             driver.get(FORM_URL)
             time.sleep(3)
 
-            # === SECTION 1 ===
-            click_option(driver, COLUMN_MAP['Gender'], row['Gender'])
-            fill_text(driver, COLUMN_MAP['Age'], row['Age'])
-            fill_text(driver, COLUMN_MAP['Batch'], row['Batch'])
-            fill_text(driver, COLUMN_MAP['Grad_Year'], row['Grad_Year'])
-            click_option(driver, COLUMN_MAP['Background'], row['Background'])
-            click_option(driver, COLUMN_MAP['Major'], row['Major'])
+            # --- DYNAMIC FILLING LOOP ---
+            # Instead of section-by-section hardcoding, we loop through the map.
+            # This is safer because if a question is on Page 2 but we check Page 1, it just skips gracefully.
             
-            # Using fill_text for Specialization in case it's a text box, or click_option if radio
-            # If it's a dropdown/radio, click_option will work. If text, fill_text works.
-            # Try both safely:
-            click_option(driver, COLUMN_MAP['Specialization'], row['Specialization'])
-            fill_text(driver, COLUMN_MAP['Specialization'], row['Specialization'])
-            
-            click_option(driver, COLUMN_MAP['University'], row['University'])
-            click_option(driver, COLUMN_MAP['City'], row['City'])
-            click_option(driver, COLUMN_MAP['Student_Type'], row['Student_Type'])
-            click_option(driver, COLUMN_MAP['Selection_Reason'], row['Selection_Reason'])
-            fill_text(driver, COLUMN_MAP['Job_Domain'], row['Job_Domain'])
-            fill_text(driver, COLUMN_MAP['Job_Role'], row['Job_Role'])
-            click_option(driver, COLUMN_MAP['Salary'], row['Salary'])
-            
-            rate_scale(driver, COLUMN_MAP['Satisfaction'], row['Satisfaction'])
-            click_option(driver, COLUMN_MAP['Status'], row['Status'])
+            # Page 1 Check
+            for key, q_text in COLUMN_MAP.items():
+                if key in row and pd.notna(row[key]):
+                    fill_smart(driver, q_text, row[key])
             
             click_next(driver)
-
-            # === SECTION 2 ===
-            rate_scale(driver, COLUMN_MAP['Job_Support_Rating'], row['Job_Support_Rating'])
-            fill_text(driver, COLUMN_MAP['Job_Support_Explain'], row['Job_Support_Explain'])
-            click_option(driver, COLUMN_MAP['Job_Ready'], row['Job_Ready'])
+            time.sleep(2)
             
-            rate_scale(driver, COLUMN_MAP['Faculty_Rating'], row['Faculty_Rating'])
-            fill_text(driver, COLUMN_MAP['Faculty_Explain'], row['Faculty_Explain'])
-            
-            rate_scale(driver, COLUMN_MAP['Resources_Rating'], row['Resources_Rating'])
-            fill_text(driver, COLUMN_MAP['Resources_Explain'], row['Resources_Explain'])
-            
-            rate_scale(driver, COLUMN_MAP['Labs_Rating'], row['Labs_Rating'])
-            fill_text(driver, COLUMN_MAP['Labs_Explain'], row['Labs_Explain'])
-            
-            rate_scale(driver, COLUMN_MAP['Sports_Rating'], row['Sports_Rating'])
-            fill_text(driver, COLUMN_MAP['Sports_Explain'], row['Sports_Explain'])
-            
-            rate_scale(driver, COLUMN_MAP['Cafe_Rating'], row['Cafe_Rating'])
-            fill_text(driver, COLUMN_MAP['Cafe_Explain'], row['Cafe_Explain'])
-            
-            rate_scale(driver, COLUMN_MAP['Hostel_Rating'], row['Hostel_Rating'])
-            fill_text(driver, COLUMN_MAP['Hostel_Explain'], row['Hostel_Explain'])
-            
-            rate_scale(driver, COLUMN_MAP['Events_Rating'], row['Events_Rating'])
-            fill_text(driver, COLUMN_MAP['Events_Explain'], row['Events_Explain'])
-            
-            rate_scale(driver, COLUMN_MAP['Campus_Rating'], row['Campus_Rating'])
-            fill_text(driver, COLUMN_MAP['Campus_Explain'], row['Campus_Explain'])
-            
-            rate_scale(driver, COLUMN_MAP['Mgmt_Rating'], row['Mgmt_Rating'])
-            fill_text(driver, COLUMN_MAP['Mgmt_Explain'], row['Mgmt_Explain'])
-            
-            rate_scale(driver, COLUMN_MAP['Overall_Rating'], row['Overall_Rating'])
-            fill_text(driver, COLUMN_MAP['Overall_Explain'], row['Overall_Explain'])
-            
-            fill_text(driver, COLUMN_MAP['Hardships'], row['Hardships'])
-            fill_text(driver, COLUMN_MAP['Lessons'], row['Lessons'])
-            click_option(driver, COLUMN_MAP['Recommend'], row['Recommend'])
-            fill_text(driver, COLUMN_MAP['Recommend_Why'], row['Recommend_Why'])
+            # Page 2 Check (Re-run filler for questions on page 2)
+            for key, q_text in COLUMN_MAP.items():
+                if key in row and pd.notna(row[key]):
+                    fill_smart(driver, q_text, row[key])
             
             click_next(driver)
+            time.sleep(2)
 
-            # === SECTION 3 ===
-            personality_cols = [
-                'Repairing_Things', 'Working_Outdoors', 'Building_Things', 'Fixing_Appliances',
-                'Operating_Machines', 'Building_Models', 'Organizing_Info', 'Handling_Records',
-                'Balancing_Budgets', 'Meeting_Records', 'Solving_Problems', 'Experimenting',
-                'Investigating_Causes', 'Logic_Discussion', 'Analyzing_Graphs', 'Systematic_Schedules',
-                'Finding_Errors', 'Music_Activities', 'Designing_Posters', 'Writing_Plays',
-                'Acting_Films', 'Creative_Ideas', 'Teaching_Others', 'Helping_People',
-                'Volunteer_Work', 'Charity_Activities', 'Including_Others', 'Training_Others',
-                'Taking_Lead', 'Presenting_Ideas', 'Persuading_People', 'Leadership_Goal',
-                'Taking_Risks', 'Competitive_Situations'
-            ]
-            for col in personality_cols:
-                if col in row:
-                    q_text = COLUMN_MAP.get(col, "")
-                    val = row[col]
-                    if q_text:
-                        rate_scale(driver, q_text, val)
-
-            click_next(driver)
-
-            # === SECTION 4 ===
-            fill_text(driver, COLUMN_MAP['Final_Comments'], row['Final_Comments'])
-            click_option(driver, COLUMN_MAP['Platform_Wish'], row['Platform_Wish'])
+            # Page 3 Check (Personality)
+            for key, q_text in COLUMN_MAP.items():
+                if key in row and pd.notna(row[key]):
+                    fill_smart(driver, q_text, row[key])
             
+            click_next(driver)
+            time.sleep(2)
+
+            # Page 4 Check (Feedback)
+            for key, q_text in COLUMN_MAP.items():
+                if key in row and pd.notna(row[key]):
+                    fill_smart(driver, q_text, row[key])
+
             # SUBMIT
-            driver.find_element(By.XPATH, "//span[contains(text(), 'Submit')]").click()
-            time.sleep(3)
-            
-            # Mark Done
-            df.at[index, 'Submission_Status'] = 'Done'
-            print(f"Row {index + 1} Submitted.")
+            submit_btn = driver.find_elements(By.XPATH, "//span[contains(text(), 'Submit')]")
+            if submit_btn:
+                submit_btn[0].click()
+                time.sleep(3)
+                df.at[index, 'Submission_Status'] = 'Done'
+                print(f"✅ Row {index + 1} Submitted Successfully.")
+            else:
+                print(f"❌ Submit button not found for Row {index + 1}")
 
         except Exception as e:
-            print(f"Error on Row {index + 1}: {e}")
+            print(f"❌ Critical Error on Row {index + 1}: {e}")
 
     driver.quit()
     df.to_csv(DATA_FILE, index=False)
