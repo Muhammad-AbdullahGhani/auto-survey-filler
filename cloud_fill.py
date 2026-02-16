@@ -13,7 +13,7 @@ from selenium.webdriver.support import expected_conditions as EC
 FORM_URL = "https://docs.google.com/forms/d/1rGyn_Vh31Z6_ZzYrOaDfJ7x1BrfscmUM83qqlfSs178/viewform"
 DATA_FILE = "FINAL_DATASET.csv"
 
-# --- THE MAPPING (Exact text match) ---
+# --- THE MAPPING ---
 COLUMN_MAP = {
     # Section 1: Demographics
     'Gender': 'What is your Gender',
@@ -119,14 +119,14 @@ def get_question_container(driver, question_text):
     return None
 
 def clean_answer(answer):
-    """Converts 5.0 to '5' and ensures text is string."""
+    """Aggressively converts '5.0' or 5.0 to '5'."""
     try:
         if pd.isna(answer): return ""
-        # If it's a number like 5.0, convert to 5
-        if isinstance(answer, (int, float)):
-            if answer == int(answer):
-                return str(int(answer))
-        return str(answer)
+        s_ans = str(answer).strip()
+        # If it ends in .0, chop it off
+        if s_ans.endswith(".0"):
+            return s_ans[:-2]
+        return s_ans
     except:
         return str(answer)
 
@@ -138,28 +138,47 @@ def fill_smart(driver, question_text, raw_answer):
     try:
         container = get_question_container(driver, question_text)
         if not container:
-            return # Skip if not found on this page
+            return # Question not on this page
 
-        # 1. Try Rating Scale (Prioritize this for ratings!)
-        try:
-            # Looks for the specific radio div with the matching data-value
-            rating_btn = container.find_element(By.XPATH, f".//div[@role='radio' and @data-value='{answer_text}']")
-            rating_btn.click()
-            print(f"  [Rate] Rated '{answer_text}' for '{question_text}'")
-            return
-        except:
-            pass
+        # --- STRATEGY 1: BRUTE FORCE RATING CLICK ---
+        # If the answer is a single digit (1-5), assume it's a rating/radio
+        if len(answer_text) == 1 and answer_text.isdigit():
+            try:
+                # Find ALL radio buttons in this question container
+                radios = container.find_elements(By.XPATH, ".//div[@role='radio']")
+                for radio in radios:
+                    # Check data-value OR aria-label
+                    data_val = radio.get_attribute("data-value")
+                    aria_lbl = radio.get_attribute("aria-label")
+                    
+                    # If the number '5' matches the data-value OR is inside '5, Excellent'
+                    if (data_val == answer_text) or (aria_lbl and answer_text in aria_lbl):
+                        # JavaScript Click (Forces the click even if hidden)
+                        driver.execute_script("arguments[0].click();", radio)
+                        print(f"  [Rate] Rated '{answer_text}' for '{question_text}'")
+                        return
+            except:
+                pass
         
-        # 2. Try Clicking (Radio/Checkbox/Dropdown)
+        # --- STRATEGY 2: STANDARD CLICK (Text Match) ---
         try:
-            option = container.find_element(By.XPATH, f".//span[contains(text(), '{answer_text}')]")
-            option.click()
-            print(f"  [Click] Selected '{answer_text}' for '{question_text}'")
-            return
+            # Look for span with exact text
+            xpath_exact = f".//span[text()='{answer_text}']"
+            # Look for span containing text
+            xpath_contains = f".//span[contains(text(), '{answer_text}')]"
+            
+            for xp in [xpath_exact, xpath_contains]:
+                try:
+                    el = container.find_element(By.XPATH, xp)
+                    driver.execute_script("arguments[0].click();", el)
+                    print(f"  [Click] Selected '{answer_text}' for '{question_text}'")
+                    return
+                except:
+                    continue
         except:
             pass
 
-        # 3. Try Typing (Input/Textarea)
+        # --- STRATEGY 3: TYPING ---
         try:
             input_field = container.find_element(By.XPATH, ".//input[@type='text'] | .//textarea")
             input_field.clear()
@@ -176,8 +195,11 @@ def fill_smart(driver, question_text, raw_answer):
 
 def click_next(driver):
     try:
-        driver.find_element(By.XPATH, "//span[contains(text(), 'Next')]").click()
-        time.sleep(2)
+        # Try finding 'Next' or 'Submit' buttons
+        buttons = driver.find_elements(By.XPATH, "//span[contains(text(), 'Next')]")
+        if buttons:
+            buttons[0].click()
+            time.sleep(2)
     except: pass
 
 # --- MAIN AUTOMATION ---
@@ -195,7 +217,7 @@ def run_automation():
         print("All rows completed.")
         return
 
-    # Batch size of 1 for safety
+    # Batch size of 1
     batch = remaining.head(1)
     print(f"Starting batch of {len(batch)} forms...")
 
@@ -210,30 +232,30 @@ def run_automation():
         print(f"\n=== Processing Row {index + 1} ===")
         try:
             driver.get(FORM_URL)
-            time.sleep(3)
+            time.sleep(4) # Give page extra time to load
 
-            # Loop through ALL keys on EVERY page
-            # This handles dynamic page logic perfectly
+            # SAFETY NET LOOP: Check every question on every page step
+            # This ensures we catch questions regardless of page order
             
-            # Page 1
+            # --- Page 1 ---
             for key, q_text in COLUMN_MAP.items():
                 if key in row: fill_smart(driver, q_text, row[key])
             click_next(driver)
             time.sleep(2)
             
-            # Page 2
+            # --- Page 2 ---
             for key, q_text in COLUMN_MAP.items():
                 if key in row: fill_smart(driver, q_text, row[key])
             click_next(driver)
             time.sleep(2)
 
-            # Page 3
+            # --- Page 3 ---
             for key, q_text in COLUMN_MAP.items():
                 if key in row: fill_smart(driver, q_text, row[key])
             click_next(driver)
             time.sleep(2)
-
-            # Page 4
+            
+            # --- Page 4 ---
             for key, q_text in COLUMN_MAP.items():
                 if key in row: fill_smart(driver, q_text, row[key])
 
